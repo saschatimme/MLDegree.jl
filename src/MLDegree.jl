@@ -290,5 +290,21 @@ function HC.evaluate_and_jacobian!(u, U, GML::GaussianML, x, p, cache::GaussianM
     nothing
 end
 
+function HC.differentiate_parameters!(U, GML::GaussianML, x, p, cache::GaussianMLCache)
+    SP.jacobian!(cache.J_F_x, GML.F, x)
+    for k in 1:size(U, 1)
+        # compute ∂ / ∂s_{i,j} ∇_x -trace(K(x)S)
+        l = 1
+        for i=1:GML.L.n, j in i:GML.L.n
+            if i == j
+                U[k, l] =  -cache.J_F_x[l, k]
+            else
+                U[k, l] = -2cache.J_F_x[l, k]
+            end
+            l += 1
+        end
+    end
+    U
+end
 
 end # module

@@ -21,22 +21,25 @@ using LinearAlgebra
 
     ml = ∇log_det_K - ∇trace_K_S
     J_ml = J_log_det_K - J_trace_K_S
+    ∂S_ml = copy(differentiate(-∇trace_K_S, s)')
 
 
     u = zeros(ComplexF64, length(vars))
     U = zeros(ComplexF64, length(vars), length(vars))
+    U_p = zeros(ComplexF64, length(vars), length(s))
     w = rand(ComplexF64, length(vars))
     p = rand(6)
 
     PLD = MLDegree.GaussianML(model)
-    cache = HC.cache(PLD, w, S)
+    C = HC.cache(PLD, w, S)
 
-    @test HC.evaluate!(u, PLD, w, p, cache) ≈ map(f -> f(vars=>w, s=>p), ml) atol=1e-12
-    @test HC.jacobian!(U, PLD, w, p, cache) ≈ map(f -> f(vars=>w, s=>p), J_ml) atol=1e-12
+    @test HC.evaluate!(u, PLD, w, p, C) ≈ map(f -> f(vars=>w, s=>p), ml) atol=1e-12
+    @test HC.jacobian!(U, PLD, w, p, C) ≈ map(f -> f(vars=>w, s=>p), J_ml) atol=1e-12
+    @test HC.differentiate_parameters!(U_p, PLD, w, p, C) ≈ map(f -> f(vars=>w, s=>p), ∂S_ml) atol=1e-12
 
     u .= 0
     U .= 0
-    HC.evaluate_and_jacobian!(u, U, PLD, w, p, cache)
+    HC.evaluate_and_jacobian!(u, U, PLD, w, p, C)
     @test u ≈ map(f -> f(vars=>w, s=>p), ml) atol=1e-12
     @test U ≈ map(f -> f(vars=>w, s=>p), J_ml) atol=1e-12
 end
