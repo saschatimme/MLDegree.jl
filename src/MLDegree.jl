@@ -1,6 +1,6 @@
 module MLDegree
 
-export GaussianML
+export GaussianML, fit_parameters, ml_degree
 
 import StaticPolynomials, HomotopyContinuation
 import LinearAlgebra
@@ -9,7 +9,6 @@ import MultivariatePolynomials
 const MP = MultivariatePolynomials
 const SP = StaticPolynomials
 const HC = HomotopyContinuation
-
 
 """
     LogDet(n)
@@ -59,7 +58,7 @@ function evaluate!(u, S::LogDet, x, cache::LogDetCache)
     n = size(cache.X, 1)
     X⁻¹ = compute_matrix_inv!(cache, x)
     k = 1
-    for i in 1:n, j in i:n
+    @inbounds for i in 1:n, j in i:n
         if i == j
             u[k] = X⁻¹[i,i]
         else
@@ -77,7 +76,7 @@ function jacobian!(U, S::LogDet, x, cache::LogDetCache)
     X⁻¹ = compute_matrix_inv!(cache, x)
 
     s = 1
-    for i in 1:n, j in i:n
+    @inbounds for i in 1:n, j in i:n
         t = 1
         for k in 1:n, l in k:n
             if i != j
@@ -104,7 +103,7 @@ function evaluate_and_jacobian!(u, U, S::LogDet, x, cache::LogDetCache)
     X⁻¹ = compute_matrix_inv!(cache, x)
 
     k = 1
-    for i in 1:n, j in i:n
+    @inbounds for i in 1:n, j in i:n
         if i == j
             u[k] = X⁻¹[i,i]
         else
@@ -113,7 +112,7 @@ function evaluate_and_jacobian!(u, U, S::LogDet, x, cache::LogDetCache)
         k += 1
     end
     s = 1
-    for i in 1:n, j in i:n
+    @inbounds for i in 1:n, j in i:n
         t = 1
         for k in 1:n, l in k:n
             if i != j
@@ -149,6 +148,22 @@ function GaussianML(f::Vector{<:MP.AbstractPolynomialLike})
     GaussianML(F, L)
 end
 
+function GaussianML(A::AbstractMatrix{<:MP.AbstractPolynomialLike})
+    check_symmetric(A)
+    n = size(A, 1)
+    GaussianML([A[i, j] for i=1:n for j=i:n])
+end
+
+function check_symmetric(A::AbstractMatrix)
+    n, m = size(A)
+    n == m || throw(ArgumentError("Given matrix is not symmetric."))
+    for i=1:n, j=i+1:n
+        A[i, j] == A[j, i] || throw(ArgumentError("Given matrix is not symmetric."))
+    end
+end
+
+Base.size(GML::GaussianML) = (SP.nvariables(GML.F), SP.nvariables(GML.F))
+
 struct GaussianMLCache <: HC.AbstractSystemCache
     F_x::Vector{ComplexF64}
     J_F_x::Matrix{ComplexF64}
@@ -174,7 +189,7 @@ function HC.evaluate!(u, GML::GaussianML, x, p, cache::GaussianMLCache)
     SP.evaluate_and_jacobian!(cache.F_x, cache.J_F_x, GML.F, x)
     evaluate!(cache.log_det_u, GML.L, cache.F_x, cache.log_det_cache)
 
-    for k in 1:length(u)
+    @inbounds for k in 1:length(u)
         u[k] = zero(ComplexF64)
         # ∇_x log(det(K(x)))
         for i = 1:size(cache.J_F_x, 1)
@@ -195,6 +210,9 @@ function HC.evaluate!(u, GML::GaussianML, x, p, cache::GaussianMLCache)
 
     u
 end
+function HC.evaluate(GML::GaussianML, x, p, cache::GaussianMLCache)
+    HC.evaluate!(zeros(ComplexF64, size(cache.J_F_x, 2)), GML, x, p, cache)
+end
 
 
 function HC.jacobian!(U, GML::GaussianML, x, p, cache::GaussianMLCache)
@@ -204,7 +222,7 @@ function HC.jacobian!(U, GML::GaussianML, x, p, cache::GaussianMLCache)
 
     n = size(cache.J_F_x, 2)
 
-    for j in 1:n, i in 1:n
+    @inbounds for j in 1:n, i in 1:n
         # Hessian_x log(det(K(x)))
         U[i, j] = zero(ComplexF64)
         for k = 1:size(cache.J_F_x, 1)
@@ -234,13 +252,17 @@ function HC.jacobian!(U, GML::GaussianML, x, p, cache::GaussianMLCache)
     U
 end
 
+function HC.jacobian(GML::GaussianML, x, p, cache::GaussianMLCache)
+    n = size(cache.J_F_x, 2)
+    HC.jacobian!(zeros(ComplexF64, n, n), GML, x, p, cache)
+end
 
 function HC.evaluate_and_jacobian!(u, U, GML::GaussianML, x, p, cache::GaussianMLCache)
     SP.evaluate!(cache.F_x, GML.F, x)
     SP.jacobian_and_hessian!(cache.J_F_x, cache.H_F_x, GML.F, x)
     evaluate_and_jacobian!(cache.log_det_u, cache.J_log_det_u, GML.L, cache.F_x, cache.log_det_cache)
 
-    for i in 1:length(u)
+    @inbounds for i in 1:length(u)
         # log(det(K(x)))
         u[i] = zero(ComplexF64)
         for k = 1:size(cache.J_F_x, 1)
@@ -260,7 +282,7 @@ function HC.evaluate_and_jacobian!(u, U, GML::GaussianML, x, p, cache::GaussianM
     end
 
     n = size(cache.J_F_x, 2)
-    for j in 1:n, i in 1:n
+    @inbounds for j in 1:n, i in 1:n
         # log(det(K(x)))
         U[i, j] = zero(ComplexF64)
         for k = 1:size(cache.J_F_x, 1)
@@ -292,7 +314,7 @@ end
 
 function HC.differentiate_parameters!(U, GML::GaussianML, x, p, cache::GaussianMLCache)
     SP.jacobian!(cache.J_F_x, GML.F, x)
-    for k in 1:size(U, 1)
+    @inbounds for k in 1:size(U, 1)
         # compute ∂ / ∂s_{i,j} ∇_x -trace(K(x)S)
         l = 1
         for i=1:GML.L.n, j in i:GML.L.n
@@ -307,4 +329,47 @@ function HC.differentiate_parameters!(U, GML::GaussianML, x, p, cache::GaussianM
     U
 end
 
-end # module
+function HC.differentiate_parameters(GML::GaussianML, x, p, cache::GaussianMLCache)
+    n = size(cache.J_F_x, 2)
+    HC.differentiate_parameters!(zeros(ComplexF64, n, length(p)), GML, x, p, cache)
+end
+
+
+function fit_parameters(GML::GaussianML, x, cache = HC.cache(GML, x, randn(eltype(x), SP.npolynomials(GML.F))))
+    SP.evaluate_and_jacobian!(cache.F_x, cache.J_F_x, GML.F, x)
+    evaluate!(cache.log_det_u, GML.L, cache.F_x, cache.log_det_cache)
+
+    n, m = size(cache.J_F_x)
+    A = zeros(eltype(cache.F_x), m, n)
+    b = zeros(eltype(cache.F_x), m)
+
+    @inbounds for k in 1:m
+        # ∇_x log(det(K(x)))
+        for i = 1:n
+            b[k] += cache.log_det_u[i] * cache.J_F_x[i, k]
+        end
+
+        # subtract now ∇_x trace(K(x)S)
+        l = 1
+        for i=1:GML.L.n, j in i:GML.L.n
+            if i == j
+                A[k, l] = cache.J_F_x[l, k]
+            else
+                A[k, l] = 2cache.J_F_x[l, k]
+            end
+            l += 1
+        end
+    end
+
+    A \ b
+end
+
+
+function ml_degree(K; strategy=HC.Petal(), max_steps=200, kwargs...)
+    F = GaussianML(K)
+    t₀ = randn(size(F, 2))
+    s₀ = fit_parameters(F, t₀)
+    HC.monodromy_solve(F, t₀, s₀; strategy=strategy, max_steps=max_steps, kwargs...)
+end
+
+end# module

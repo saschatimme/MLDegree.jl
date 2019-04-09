@@ -37,6 +37,10 @@ using LinearAlgebra
     @test HC.jacobian!(U, PLD, w, p, C) ≈ map(f -> f(vars=>w, s=>p), J_ml) atol=1e-12
     @test HC.differentiate_parameters!(U_p, PLD, w, p, C) ≈ map(f -> f(vars=>w, s=>p), ∂S_ml) atol=1e-12
 
+    @test HC.evaluate(PLD, w, p, C) ≈ map(f -> f(vars=>w, s=>p), ml) atol=1e-12
+    @test HC.jacobian(PLD, w, p, C) ≈ map(f -> f(vars=>w, s=>p), J_ml) atol=1e-12
+    @test HC.differentiate_parameters(PLD, w, p, C) ≈ map(f -> f(vars=>w, s=>p), ∂S_ml) atol=1e-12
+
     u .= 0
     U .= 0
     HC.evaluate_and_jacobian!(u, U, PLD, w, p, C)
